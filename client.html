@@ -15,7 +15,7 @@
 
     document.getElementById("connect").onclick = () => {
       streamId = document.getElementById("input").value.trim();
-      const ws = new WebSocket("wss://your-render-websocket-url"); // replace this later
+      const ws = new WebSocket("https://websharebackend.onrender.com"); // replace this later
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "register", role: "client", streamId }));
