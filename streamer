@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Streamer</title>
+</head>
+<body>
+  <h2>Streamer</h2>
+  <p>Stream ID: <span id="streamId">...</span></p>
+  <button id="start">Start Streaming</button>
+  <p id="status"></p>
+
+  <script>
+    const streamId = Math.random().toString(36).substring(2, 8);
+    document.getElementById('streamId').textContent = streamId;
+
+    const ws = new WebSocket("wss://your-render-websocket-url"); // replace this later
+    let peer;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "register", role: "streamer", streamId }));
+    };
+
+    ws.onmessage = async (msg) => {
+      const data = JSON.parse(msg.data);
+
+      if (data.type === "start-stream") {
+        document.getElementById("status").textContent = "Viewer connected. Streaming...";
+
+        peer = new RTCPeerConnection();
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+
+        stream.getTracks().forEach(track => peer.addTrack(track, stream));
+
+        peer.onicecandidate = e => {
+          if (e.candidate) return;
+          ws.send(JSON.stringify({ type: "offer", sdp: peer.localDescription, streamId }));
+        };
+
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+      }
+
+      if (data.type === "answer") {
+        await peer.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      }
+
+      if (data.type === "expired") {
+        document.getElementById("status").textContent = "Stream expired. Please refresh.";
+        ws.close();
+      }
+    };
+
+    document.getElementById("start").onclick = () => {
+      ws.send(JSON.stringify({ type: "keep-alive", streamId }));
+    };
+  </script>
+</body>
+</html>
