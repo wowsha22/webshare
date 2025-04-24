@@ -43,6 +43,11 @@
     .controls button:hover {
       background: rgba(0, 0, 0, 0.8);
     }
+    #streamIdInput {
+      font-size: 18px;
+      padding: 10px;
+      margin: 10px;
+    }
   </style>
 </head>
 <body>
@@ -50,79 +55,73 @@
   <div id="canvasContainer">
     <canvas id="canvas"></canvas>
     <div class="controls">
-      <button id="fullscreenButton">Fullscreen</button>
+      <input type="text" id="streamIdInput" placeholder="Enter Stream ID">
+      <button id="connectButton">Connect</button>
     </div>
   </div>
 
   <script>
-    const ws = new WebSocket('https://websharebackend.onrender.com');
+    let ws;
     let peerConnection;
     let canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
-    let stream;
-    
-    // Handle WebSocket messages
-    ws.onmessage = async (msg) => {
-      console.log("Received message:", msg.data);
-      const data = JSON.parse(msg.data);
-      
-      if (data.type === "offer") {
-        peerConnection = new RTCPeerConnection();
-        
-        peerConnection.ontrack = (event) => {
-          console.log("Received stream:", event.streams[0]);
-          stream = event.streams[0];
-          
-          // Start drawing frames on the canvas
-          drawStreamOnCanvas(stream);
-        };
-        
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription, streamId: data.streamId }));
-      }
-    };
+    let streamId;
 
-    // Function to draw stream frames on the canvas
+    // Handle WebSocket messages
+    function connectToStream() {
+      streamId = document.getElementById('streamIdInput').value;
+      if (!streamId) {
+        alert("Please enter a stream ID.");
+        return;
+      }
+
+      ws = new WebSocket('https://websharebackend.onrender.com');
+      
+      ws.onmessage = async (msg) => {
+        const data = JSON.parse(msg.data);
+        
+        if (data.type === 'offer' && data.streamId === streamId) {
+          peerConnection = new RTCPeerConnection();
+          
+          peerConnection.ontrack = (event) => {
+            console.log("Received stream:", event.streams[0]);
+            let stream = event.streams[0];
+            drawStreamOnCanvas(stream);
+          };
+          
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+          ws.send(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription, streamId: streamId }));
+        }
+      };
+    }
+
+    // Function to draw stream frames on canvas
     function drawStreamOnCanvas(stream) {
       const videoTrack = stream.getVideoTracks()[0];
       const mediaStreamTrack = new MediaStream([videoTrack]);
-
-      // Create a temporary video element to capture the stream
       let tempVideo = document.createElement('video');
       tempVideo.srcObject = mediaStreamTrack;
       tempVideo.play();
 
-      // Set the canvas size to match the video stream dimensions
       tempVideo.onloadedmetadata = () => {
         canvas.width = tempVideo.videoWidth;
         canvas.height = tempVideo.videoHeight;
       };
 
-      // Draw the current video frame to canvas every 100ms (approx. 10fps)
       function drawFrame() {
         if (!tempVideo.paused && !tempVideo.ended) {
           ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
-          setTimeout(drawFrame, 100); // Draw at ~10fps
+          setTimeout(drawFrame, 100); // ~10fps
         }
       }
 
       drawFrame();
     }
 
-    // Fullscreen Button
-    document.getElementById('fullscreenButton').addEventListener('click', () => {
-      if (canvas.requestFullscreen) {
-        canvas.requestFullscreen();
-      } else if (canvas.mozRequestFullScreen) { // Firefox
-        canvas.mozRequestFullScreen();
-      } else if (canvas.webkitRequestFullscreen) { // Chrome and Safari
-        canvas.webkitRequestFullscreen();
-      } else if (canvas.msRequestFullscreen) { // IE/Edge
-        canvas.msRequestFullscreen();
-      }
-    });
+    // Button to connect to stream
+    document.getElementById('connectButton').addEventListener('click', connectToStream);
   </script>
 
 </body>
