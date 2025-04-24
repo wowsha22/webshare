@@ -43,6 +43,12 @@
     .controls button:hover {
       background: rgba(0, 0, 0, 0.8);
     }
+    #streamId {
+      text-align: center;
+      font-size: 24px;
+      color: #333;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -52,6 +58,7 @@
     <div class="controls">
       <button id="startStreamButton">Start Stream</button>
     </div>
+    <div id="streamId">Stream ID: </div>
   </div>
 
   <script>
@@ -60,6 +67,10 @@
     let stream;
     let canvas = document.getElementById('canvas');
     let ctx = canvas.getContext('2d');
+    let streamId = generateStreamId();
+
+    // Display stream ID on the streamer page
+    document.getElementById('streamId').textContent = "Stream ID: " + streamId;
 
     // Handle WebSocket messages
     ws.onmessage = async (msg) => {
@@ -79,7 +90,7 @@
         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription, streamId: data.streamId }));
+        ws.send(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription, streamId: streamId }));
       }
     };
 
@@ -96,13 +107,13 @@
         peerConnection.onicecandidate = e => {
           if (e.candidate) {
             console.log("Sending ICE candidate:", e.candidate);
-            ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription, streamId: "unique-stream-id" }));
+            ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription, streamId: streamId }));
           }
         };
         
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-        ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription, streamId: "unique-stream-id" }));
+        ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription, streamId: streamId }));
       } catch (err) {
         console.error("Error capturing screen:", err);
       }
@@ -128,6 +139,11 @@
       }
 
       drawFrame();
+    }
+
+    // Function to generate a unique stream ID
+    function generateStreamId() {
+      return 'stream-' + Math.random().toString(36).substr(2, 9); // Generate a random stream ID
     }
 
   </script>
