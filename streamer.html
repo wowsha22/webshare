@@ -1,58 +1,136 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Streamer</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custom Streamer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f5f5f5;
+    }
+    #canvasContainer {
+      position: relative;
+      max-width: 90%;
+      max-height: 80%;
+    }
+    canvas {
+      width: 100%;
+      background-color: #000;
+      border-radius: 10px;
+    }
+    .controls {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+    }
+    .controls button {
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .controls button:hover {
+      background: rgba(0, 0, 0, 0.8);
+    }
+  </style>
 </head>
 <body>
-  <h2>Streamer</h2>
-  <p>Stream ID: <span id="streamId">...</span></p>
-  <button id="start">Start Streaming</button>
-  <p id="status"></p>
+
+  <div id="canvasContainer">
+    <canvas id="canvas"></canvas>
+    <div class="controls">
+      <button id="startStreamButton">Start Stream</button>
+    </div>
+  </div>
 
   <script>
-    const streamId = Math.random().toString(36).substring(2, 8);
-    document.getElementById('streamId').textContent = streamId;
+    const ws = new WebSocket('https://websharebackend.onrender.com');
+    let peerConnection;
+    let stream;
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
 
-    const ws = new WebSocket("https://websharebackend.onrender.com"); // replace this later
-    let peer;
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "register", role: "streamer", streamId }));
-    };
-
+    // Handle WebSocket messages
     ws.onmessage = async (msg) => {
       const data = JSON.parse(msg.data);
 
-      if (data.type === "start-stream") {
-        document.getElementById("status").textContent = "Viewer connected. Streaming...";
-
-        peer = new RTCPeerConnection();
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-
-        stream.getTracks().forEach(track => peer.addTrack(track, stream));
-
-        peer.onicecandidate = e => {
-          if (e.candidate) return;
-          ws.send(JSON.stringify({ type: "offer", sdp: peer.localDescription, streamId }));
+      if (data.type === 'offer') {
+        peerConnection = new RTCPeerConnection();
+        
+        peerConnection.ontrack = (event) => {
+          console.log("Received stream:", event.streams[0]);
+          stream = event.streams[0];
+          
+          // Draw the video on the canvas
+          drawStreamOnCanvas(stream);
         };
-
-        const offer = await peer.createOffer();
-        await peer.setLocalDescription(offer);
-      }
-
-      if (data.type === "answer") {
-        await peer.setRemoteDescription(new RTCSessionDescription(data.sdp));
-      }
-
-      if (data.type === "expired") {
-        document.getElementById("status").textContent = "Stream expired. Please refresh.";
-        ws.close();
+        
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription, streamId: data.streamId }));
       }
     };
 
-    document.getElementById("start").onclick = () => {
-      ws.send(JSON.stringify({ type: "keep-alive", streamId }));
-    };
+    // Start stream and send data to the client
+    document.getElementById('startStreamButton').addEventListener('click', async () => {
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        drawStreamOnCanvas(stream);
+
+        peerConnection = new RTCPeerConnection();
+        
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+        
+        peerConnection.onicecandidate = e => {
+          if (e.candidate) {
+            console.log("Sending ICE candidate:", e.candidate);
+            ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription, streamId: "unique-stream-id" }));
+          }
+        };
+        
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription, streamId: "unique-stream-id" }));
+      } catch (err) {
+        console.error("Error capturing screen:", err);
+      }
+    });
+
+    function drawStreamOnCanvas(stream) {
+      const videoTrack = stream.getVideoTracks()[0];
+      const mediaStreamTrack = new MediaStream([videoTrack]);
+      let tempVideo = document.createElement('video');
+      tempVideo.srcObject = mediaStreamTrack;
+      tempVideo.play();
+
+      tempVideo.onloadedmetadata = () => {
+        canvas.width = tempVideo.videoWidth;
+        canvas.height = tempVideo.videoHeight;
+      };
+
+      function drawFrame() {
+        if (!tempVideo.paused && !tempVideo.ended) {
+          ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
+          setTimeout(drawFrame, 100); // ~10fps
+        }
+      }
+
+      drawFrame();
+    }
+
   </script>
+
 </body>
 </html>
