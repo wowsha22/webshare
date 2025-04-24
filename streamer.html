@@ -13,7 +13,7 @@
     const streamId = Math.random().toString(36).substring(2, 8);
     document.getElementById('streamId').textContent = streamId;
 
-    const ws = new WebSocket("wss://your-render-websocket-url"); // replace this later
+    const ws = new WebSocket("https://websharebackend.onrender.com"); // replace this later
     let peer;
 
     ws.onopen = () => {
