@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Client</title>
+</head>
+<body>
+  <h2>Client</h2>
+  <input id="input" placeholder="Enter Stream ID">
+  <button id="connect">Connect</button>
+  <video id="video" autoplay playsinline controls style="max-width: 100%"></video>
+
+  <script>
+    let peer;
+    let streamId;
+
+    document.getElementById("connect").onclick = () => {
+      streamId = document.getElementById("input").value.trim();
+      const ws = new WebSocket("wss://your-render-websocket-url"); // replace this later
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "register", role: "client", streamId }));
+      };
+
+      ws.onmessage = async (msg) => {
+        const data = JSON.parse(msg.data);
+
+        if (data.type === "offer") {
+          peer = new RTCPeerConnection();
+
+          peer.ontrack = e => {
+            document.getElementById("video").srcObject = e.streams[0];
+          };
+
+          await peer.setRemoteDescription(new RTCSessionDescription(data.sdp));
+
+          peer.onicecandidate = e => {
+            if (e.candidate) return;
+            ws.send(JSON.stringify({ type: "answer", sdp: peer.localDescription, streamId }));
+          };
+
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+        }
+
+        if (data.type === "not-found") {
+          alert("Stream ID not found or expired.");
+        }
+      };
+    };
+  </script>
+</body>
+</html>
