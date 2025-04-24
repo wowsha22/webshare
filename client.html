@@ -1,52 +1,129 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Client</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custom Stream Viewer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f5f5f5;
+    }
+    #canvasContainer {
+      position: relative;
+      max-width: 90%;
+      max-height: 80%;
+    }
+    canvas {
+      width: 100%;
+      background-color: #000;
+      border-radius: 10px;
+    }
+    .controls {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+    }
+    .controls button {
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .controls button:hover {
+      background: rgba(0, 0, 0, 0.8);
+    }
+  </style>
 </head>
 <body>
-  <h2>Client</h2>
-  <input id="input" placeholder="Enter Stream ID">
-  <button id="connect">Connect</button>
-  <video id="video" autoplay playsinline controls style="max-width: 100%"></video>
+
+  <div id="canvasContainer">
+    <canvas id="canvas"></canvas>
+    <div class="controls">
+      <button id="fullscreenButton">Fullscreen</button>
+    </div>
+  </div>
 
   <script>
-    let peer;
-    let streamId;
-
-    document.getElementById("connect").onclick = () => {
-      streamId = document.getElementById("input").value.trim();
-      const ws = new WebSocket("https://websharebackend.onrender.com"); // replace this later
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "register", role: "client", streamId }));
-      };
-
-      ws.onmessage = async (msg) => {
-        const data = JSON.parse(msg.data);
-
-        if (data.type === "offer") {
-          peer = new RTCPeerConnection();
-
-          peer.ontrack = e => {
-            document.getElementById("video").srcObject = e.streams[0];
-          };
-
-          await peer.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-          peer.onicecandidate = e => {
-            if (e.candidate) return;
-            ws.send(JSON.stringify({ type: "answer", sdp: peer.localDescription, streamId }));
-          };
-
-          const answer = await peer.createAnswer();
-          await peer.setLocalDescription(answer);
-        }
-
-        if (data.type === "not-found") {
-          alert("Stream ID not found or expired.");
-        }
-      };
+    const ws = new WebSocket('https://websharebackend.onrender.com');
+    let peerConnection;
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
+    let stream;
+    
+    // Handle WebSocket messages
+    ws.onmessage = async (msg) => {
+      console.log("Received message:", msg.data);
+      const data = JSON.parse(msg.data);
+      
+      if (data.type === "offer") {
+        peerConnection = new RTCPeerConnection();
+        
+        peerConnection.ontrack = (event) => {
+          console.log("Received stream:", event.streams[0]);
+          stream = event.streams[0];
+          
+          // Start drawing frames on the canvas
+          drawStreamOnCanvas(stream);
+        };
+        
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription, streamId: data.streamId }));
+      }
     };
+
+    // Function to draw stream frames on the canvas
+    function drawStreamOnCanvas(stream) {
+      const videoTrack = stream.getVideoTracks()[0];
+      const mediaStreamTrack = new MediaStream([videoTrack]);
+
+      // Create a temporary video element to capture the stream
+      let tempVideo = document.createElement('video');
+      tempVideo.srcObject = mediaStreamTrack;
+      tempVideo.play();
+
+      // Set the canvas size to match the video stream dimensions
+      tempVideo.onloadedmetadata = () => {
+        canvas.width = tempVideo.videoWidth;
+        canvas.height = tempVideo.videoHeight;
+      };
+
+      // Draw the current video frame to canvas every 100ms (approx. 10fps)
+      function drawFrame() {
+        if (!tempVideo.paused && !tempVideo.ended) {
+          ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
+          setTimeout(drawFrame, 100); // Draw at ~10fps
+        }
+      }
+
+      drawFrame();
+    }
+
+    // Fullscreen Button
+    document.getElementById('fullscreenButton').addEventListener('click', () => {
+      if (canvas.requestFullscreen) {
+        canvas.requestFullscreen();
+      } else if (canvas.mozRequestFullScreen) { // Firefox
+        canvas.mozRequestFullScreen();
+      } else if (canvas.webkitRequestFullscreen) { // Chrome and Safari
+        canvas.webkitRequestFullscreen();
+      } else if (canvas.msRequestFullscreen) { // IE/Edge
+        canvas.msRequestFullscreen();
+      }
+    });
   </script>
+
 </body>
 </html>
